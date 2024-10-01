@@ -163,7 +163,6 @@ func (amf *AMF) Initialize(c *cli.Context) error {
 				continue
 			}
 			go amf.UpdateConfig(configChannel)
-			break
 		}
 	} else {
 		go func() {
