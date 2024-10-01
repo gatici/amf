@@ -40,7 +40,6 @@ import (
 	"github.com/omec-project/amf/producer/callback"
 	"github.com/omec-project/amf/util"
 	aperLogger "github.com/omec-project/aper/logger"
-	gClient "github.com/omec-project/config5g/proto/client"
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	nasLogger "github.com/omec-project/nas/logger"
 	ngapLogger "github.com/omec-project/ngap/logger"
@@ -151,7 +150,7 @@ func (amf *AMF) Initialize(c *cli.Context) error {
 		factory.AmfConfig.Configuration.SupportTAIList = nil
 		factory.AmfConfig.Configuration.PlmnSupportList = nil
 		initLog.Infoln("Reading Amf related configuration from ROC")
-		client := gClient.ConnectToConfigServer(factory.AmfConfig.Configuration.WebuiUri)
+		client := ConnectToConfigServer(factory.AmfConfig.Configuration.WebuiUri)
 		configChannel := client.PublishOnConfigChange(true)
 		go amf.UpdateConfig(configChannel)
 	} else {
