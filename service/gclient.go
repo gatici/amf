@@ -79,6 +79,9 @@ func (confClient *ConfigClient) PublishOnConfigChange(mdataFlag bool) chan *prot
 	commChan := make(chan *protos.NetworkSliceResponse)
 	confClient.Channel = commChan
 	go confClient.subscribeToConfigPod(commChan)
+	if confClient.Conn == nil {
+		return nil
+	}
 	fmt.Printf("coomchanel: %v", commChan)
 	return commChan
 }

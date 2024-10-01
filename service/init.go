@@ -150,9 +150,16 @@ func (amf *AMF) Initialize(c *cli.Context) error {
 		factory.AmfConfig.Configuration.SupportTAIList = nil
 		factory.AmfConfig.Configuration.PlmnSupportList = nil
 		initLog.Infoln("Reading Amf related configuration from ROC")
-		client := ConnectToConfigServer(factory.AmfConfig.Configuration.WebuiUri)
-		configChannel := client.PublishOnConfigChange(true)
-		go amf.UpdateConfig(configChannel)
+		for {
+			client := ConnectToConfigServer(factory.AmfConfig.Configuration.WebuiUri)
+			if client.GetConfigClientConn() != nil {
+				configChannel := client.PublishOnConfigChange(true)
+				if configChannel == nil {
+					continue
+				}
+				go amf.UpdateConfig(configChannel)
+			}
+		}
 	} else {
 		go func() {
 			logger.GrpcLog.Infoln("Reading Amf Configuration from Helm")
