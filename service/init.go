@@ -152,13 +152,13 @@ func (amf *AMF) Initialize(c *cli.Context) error {
 		initLog.Infoln("Reading Amf related configuration from ROC")
 		for {
 			client := ConnectToConfigServer(factory.AmfConfig.Configuration.WebuiUri)
-			if client.GetConfigClientConn() != nil {
-				configChannel := client.PublishOnConfigChange(true)
-				if configChannel == nil {
-					continue
-				}
-				go amf.UpdateConfig(configChannel)
+			configChannel := client.PublishOnConfigChange(true)
+			if client.GetConfigClientConn() == nil {
+				close(configChannel)
+				continue
 			}
+			go amf.UpdateConfig(configChannel)
+			break
 		}
 	} else {
 		go func() {

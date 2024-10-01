@@ -23,7 +23,6 @@ import (
 var (
 	selfRestartCounter      uint32
 	configPodRestartCounter uint32 = 0
-	maxRetryCounter         uint32 = 0
 )
 
 func init() {
@@ -80,6 +79,7 @@ func (confClient *ConfigClient) PublishOnConfigChange(mdataFlag bool) chan *prot
 	confClient.Channel = commChan
 	go confClient.subscribeToConfigPod(commChan)
 	if confClient.Conn == nil {
+		close(commChan)
 		return nil
 	}
 	fmt.Printf("coomchanel: %v", commChan)
@@ -166,60 +166,56 @@ func (confClient *ConfigClient) subscribeToConfigPod(commChan chan *protos.Netwo
 	logger.GrpcLog.Infoln("subscribeToConfigPod ")
 	myid := os.Getenv("HOSTNAME")
 	var stream protos.ConfigService_NetworkSliceSubscribeClient
-	for {
-		if stream == nil && (maxRetryCounter < 6) {
-			status := confClint.Conn.GetState()
-			var err error
-			if status == connectivity.Ready {
-				logger.GrpcLog.Infoln("connectivity ready ")
-				rreq := &protos.NetworkSliceRequest{RestartCounter: selfRestartCounter, ClientId: myid, MetadataRequested: confClient.MetadataRequested}
-				if stream, err = confClient.Client.NetworkSliceSubscribe(context.Background(), rreq); err != nil {
-					logger.GrpcLog.Errorf("Failed to subscribe: %v", err)
-					time.Sleep(time.Second * 5)
-					maxRetryCounter++
-					// Retry on failure
-					continue
-				}
-			} else if status == connectivity.Idle {
-				logger.GrpcLog.Errorf("Connectivity status idle, trying to connect again")
+	if stream == nil {
+		status := confClient.Conn.GetState()
+		var err error
+		if status == connectivity.Ready {
+			logger.GrpcLog.Infoln("connectivity ready ")
+			rreq := &protos.NetworkSliceRequest{RestartCounter: selfRestartCounter, ClientId: myid, MetadataRequested: confClient.MetadataRequested}
+			if stream, err = confClient.Client.NetworkSliceSubscribe(context.Background(), rreq); err != nil {
+				logger.GrpcLog.Errorf("Failed to subscribe: %v", err)
 				time.Sleep(time.Second * 5)
-				maxRetryCounter++
-				continue
-			} else {
-				logger.GrpcLog.Errorf("Connectivity status not ready")
-				time.Sleep(time.Second * 5)
-				maxRetryCounter++
-				continue
 			}
-		}
-		rsp, err := stream.Recv()
-		if err != nil {
-			logger.GrpcLog.Errorf("Failed to receive message: %v", err)
-			confClient.Conn.Close()
-			break
-		}
+		} else if status == connectivity.Idle {
+			logger.GrpcLog.Errorf("Connectivity status idle, trying to connect again")
+			time.Sleep(time.Second * 5)
 
-		logger.GrpcLog.Infoln("stream msg received ")
-		logger.GrpcLog.Debugf("#Network Slices %v, RC of configpod %v ", len(rsp.NetworkSlice), rsp.RestartCounter)
-		if configPodRestartCounter == 0 || (configPodRestartCounter == rsp.RestartCounter) {
-			// first time connection or config update
-			configPodRestartCounter = rsp.RestartCounter
-			if len(rsp.NetworkSlice) > 0 {
-				// always carries full config copy
-				logger.GrpcLog.Infoln("First time config Received ", rsp)
-				commChan <- rsp
-			} else if rsp.ConfigUpdated == 1 {
-				// config delete , all slices deleted
-				logger.GrpcLog.Infoln("Complete config deleted ")
-				commChan <- rsp
-			}
-		} else if len(rsp.NetworkSlice) > 0 {
-			logger.GrpcLog.Errorf("Config received after config Pod restart")
-			// config received after config pod restart
-			configPodRestartCounter = rsp.RestartCounter
-			commChan <- rsp
 		} else {
-			logger.GrpcLog.Errorf("Config Pod is restarted and no config received")
+			logger.GrpcLog.Errorf("Connectivity status not ready")
+			time.Sleep(time.Second * 5)
 		}
+	}
+	if stream == nil {
+		confClient.Conn.Close()
+		return
+	}
+	rsp, err := stream.Recv()
+	if err != nil {
+		logger.GrpcLog.Errorf("Failed to receive message: %v", err)
+		confClient.Conn.Close()
+		return
+	}
+
+	logger.GrpcLog.Infoln("stream msg received ")
+	logger.GrpcLog.Debugf("#Network Slices %v, RC of configpod %v ", len(rsp.NetworkSlice), rsp.RestartCounter)
+	if configPodRestartCounter == 0 || (configPodRestartCounter == rsp.RestartCounter) {
+		// first time connection or config update
+		configPodRestartCounter = rsp.RestartCounter
+		if len(rsp.NetworkSlice) > 0 {
+			// always carries full config copy
+			logger.GrpcLog.Infoln("First time config Received ", rsp)
+			commChan <- rsp
+		} else if rsp.ConfigUpdated == 1 {
+			// config delete , all slices deleted
+			logger.GrpcLog.Infoln("Complete config deleted ")
+			commChan <- rsp
+		}
+	} else if len(rsp.NetworkSlice) > 0 {
+		logger.GrpcLog.Errorf("Config received after config Pod restart")
+		// config received after config pod restart
+		configPodRestartCounter = rsp.RestartCounter
+		commChan <- rsp
+	} else {
+		logger.GrpcLog.Errorf("Config Pod is restarted and no config received")
 	}
 }
