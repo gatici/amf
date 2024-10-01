@@ -150,16 +150,15 @@ func (amf *AMF) Initialize(c *cli.Context) error {
 		factory.AmfConfig.Configuration.SupportTAIList = nil
 		factory.AmfConfig.Configuration.PlmnSupportList = nil
 		initLog.Infoln("Reading Amf related configuration from ROC")
-		client := ConnectToConfigServer(factory.AmfConfig.Configuration.WebuiUri)
-		initLog.Infoln("GRPC client created")
-		for {
+		var client ConfClient
+		for client == nil {
+			client = ConnectToConfigServer(factory.AmfConfig.Configuration.WebuiUri)
+			initLog.Infoln("GRPC client created")
 			configChannel := client.PublishOnConfigChange(true)
 			initLog.Infoln("ConfigChannel created")
 			if client.GetConfigClientConn() == nil {
 				close(configChannel)
-				initLog.Infoln("Config channel is closed")
-				client = ConnectToConfigServer(factory.AmfConfig.Configuration.WebuiUri)
-				initLog.Infoln("Client re-created")
+				client = nil
 				continue
 			}
 			go amf.UpdateConfig(configChannel)

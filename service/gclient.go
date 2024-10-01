@@ -6,7 +6,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"math/rand"
 	"os"
 	"time"
@@ -78,11 +77,6 @@ func (confClient *ConfigClient) PublishOnConfigChange(mdataFlag bool) chan *prot
 	commChan := make(chan *protos.NetworkSliceResponse)
 	confClient.Channel = commChan
 	go confClient.subscribeToConfigPod(commChan)
-	if confClient.Conn == nil {
-		close(commChan)
-		return nil
-	}
-	fmt.Printf("coomchanel: %v", commChan)
 	return commChan
 }
 
