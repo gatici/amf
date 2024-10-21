@@ -40,7 +40,7 @@ import (
 	"github.com/omec-project/amf/producer/callback"
 	"github.com/omec-project/amf/util"
 	aperLogger "github.com/omec-project/aper/logger"
-	gClient "github.com/omec-project/config5g/proto/client"
+	grpcClient "github.com/omec-project/config5g/proto/client"
 	protos "github.com/omec-project/config5g/proto/sdcoreConfig"
 	nasLogger "github.com/omec-project/nas/logger"
 	ngapLogger "github.com/omec-project/ngap/logger"
@@ -148,9 +148,11 @@ func (amf *AMF) Initialize(c *cli.Context) error {
 		factory.AmfConfig.Configuration.SupportTAIList = nil
 		factory.AmfConfig.Configuration.PlmnSupportList = nil
 		initLog.Infoln("Reading Amf related configuration from ROC")
-		client := gClient.ConnectToConfigServer(factory.AmfConfig.Configuration.WebuiUri)
-		configChannel := client.PublishOnConfigChange(true)
-		go amf.UpdateConfig(configChannel)
+		client, err := grpcClient.ConnectToConfigServer(factory.AmfConfig.Configuration.WebuiUri)
+		if err != nil {
+			go updateConfig(client, amf)
+		}
+		return err
 	} else {
 		go func() {
 			logger.GrpcLog.Infoln("Reading Amf Configuration from Helm")
@@ -160,6 +162,43 @@ func (amf *AMF) Initialize(c *cli.Context) error {
 	}
 
 	return nil
+}
+
+// updateConfig connects the config pod GRPC server and subscribes the config changes
+// then updates AMF configuration
+func updateConfig(client grpcClient.ConfClient, amf *AMF) {
+	var stream protos.ConfigService_NetworkSliceSubscribeClient
+	var err error
+	var configChannel chan *protos.NetworkSliceResponse
+	for {
+		if client != nil {
+			stream, err = client.CheckGrpcConnectivity()
+			if err != nil {
+				initLog.Errorf("%v", err)
+				if stream != nil {
+					time.Sleep(time.Second * 30)
+					continue
+				} else {
+					err = client.GetConfigClientConn().Close()
+					if err != nil {
+						initLog.Debugf("failing ConfigClient is not closed properly: %+v", err)
+					}
+					client = nil
+					continue
+				}
+			}
+			if configChannel == nil {
+				configChannel = client.PublishOnConfigChange(true, stream)
+				go amf.UpdateConfig(configChannel)
+			}
+		} else {
+			client, err = grpcClient.ConnectToConfigServer(factory.AmfConfig.Configuration.WebuiUri)
+			if err != nil {
+				initLog.Errorf("%+v", err)
+			}
+			continue
+		}
+	}
 }
 
 func (amf *AMF) WatchConfig() {
